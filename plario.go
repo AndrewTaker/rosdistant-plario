@@ -37,28 +37,54 @@ func NewPlario(moduleID, teacherCourseID int, token string) *Plario {
 // activity id is just an id of a question
 // start activity -> get activity id -> get attempt based on activity -> post answer
 
-func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int) (*PlarioAnswerResponse, error) {
-	baseURL, err := url.Parse(p.BaseURL + "/learner/adaptiveLearning/checkAnswer")
-	if err != nil {
-		return nil, err
-	}
+func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, secondAttempt bool) (*PlarioAnswerResponse, error) {
+	var baseURL *url.URL
+	var bPayload []byte
+	var err error
 
-	payload := PlarionAnswerRequest{
-		ActivityID:      activityID,
-		AnswerIDs:       answers,
-		AttemptID:       p.Attempt,
-		ModuleID:        p.ModuleID,
-		TeacherCourseID: p.TeacherCourseID,
-	}
-	log.Printf("PAYLOAD %+v", payload)
+	if !secondAttempt {
+		log.Println("first attempt")
+		baseURL, err = url.Parse(p.BaseURL + "/learner/adaptiveLearning/checkAnswer")
+		if err != nil {
+			return nil, err
+		}
 
-	queryParams := baseURL.Query()
-	queryParams.Add("culture", p.Culture)
-	baseURL.RawQuery = queryParams.Encode()
+		payload := PlarionAnswerRequest{
+			ActivityID:      activityID,
+			AnswerIDs:       answers,
+			AttemptID:       p.Attempt,
+			ModuleID:        p.ModuleID,
+			TeacherCourseID: p.TeacherCourseID,
+		}
 
-	bPayload, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
+		queryParams := baseURL.Query()
+		queryParams.Add("culture", p.Culture)
+		baseURL.RawQuery = queryParams.Encode()
+
+		bPayload, err = json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		log.Println("second attempt")
+		baseURL, err = url.Parse(p.BaseURL + fmt.Sprintf("/learner/adaptiveLearning/checkAnswer/answerAttempt/%d/%d", activityID, p.Attempt))
+		if err != nil {
+			return nil, err
+		}
+
+		payload := PlarionAnswerRequest{
+			AnswerIDs: answers,
+			ModuleID:  p.ModuleID,
+		}
+
+		queryParams := baseURL.Query()
+		queryParams.Add("culture", p.Culture)
+		baseURL.RawQuery = queryParams.Encode()
+
+		bPayload, err = json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	req, err := http.NewRequest("POST", baseURL.String(), bytes.NewBuffer(bPayload))
@@ -67,6 +93,8 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int) 
 	}
 
 	p.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -75,16 +103,12 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		log.Println(string(body))
-		if err != nil {
-			return nil, err
-		}
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	var par PlarioAnswerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&par); err != nil {
-		log.Println("err in json decoder", resp.StatusCode)
 		return nil, err
 	}
 
@@ -105,8 +129,6 @@ func (p *Plario) GetAttempt(client *http.Client, activityID int) (int, error) {
 	q.Set("culture", p.Culture)
 	baseURL.RawQuery = q.Encode()
 
-	log.Println(baseURL.String())
-
 	req, err := http.NewRequest("POST", baseURL.String(), nil)
 	if err != nil {
 		return 0, err
@@ -120,12 +142,10 @@ func (p *Plario) GetAttempt(client *http.Client, activityID int) (int, error) {
 	}
 	defer resp.Body.Close()
 
-	log.Println("ATTEMPT STATUS CODE ", resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return 0, nil
 	}
-	log.Println("ATTEMPT ID", string(body))
 
 	value, err := strconv.Atoi(string(body))
 	if err != nil {
@@ -136,7 +156,6 @@ func (p *Plario) GetAttempt(client *http.Client, activityID int) (int, error) {
 }
 
 func (p *Plario) GetQuestion(client *http.Client) (*PlarioQuestionResponse, error) {
-	log.Println("start GetQuestion")
 	baseURL, err := url.Parse(p.BaseURL + "/learner/adaptiveLearning")
 	if err != nil {
 		return nil, err
@@ -148,35 +167,26 @@ func (p *Plario) GetQuestion(client *http.Client) (*PlarioQuestionResponse, erro
 	queryParams.Add("culture", p.Culture)
 	baseURL.RawQuery = queryParams.Encode()
 
-	log.Println("parsed url to ", baseURL.String())
 	req, err := http.NewRequest("GET", baseURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	log.Println("sent req")
 
 	p.setHeaders(req)
-	log.Println("set headers")
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	log.Println("got response")
 
 	if resp.StatusCode != http.StatusOK {
-		log.Println("bad status code ", resp.StatusCode)
-		body, err := io.ReadAll(resp.Body)
-		log.Println(string(body))
-		if err != nil {
-			return nil, err
-		}
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	var pqr PlarioQuestionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pqr); err != nil {
-		log.Println("err in json decoder", resp.StatusCode)
 		return nil, err
 	}
 
