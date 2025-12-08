@@ -30,8 +30,9 @@ type PlarioAnswerResponse struct {
 }
 
 type Module struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID      int     `json:"id"`
+	Name    string  `json:"name"`
+	Mastery float32 `json:"mastery"`
 }
 
 type Course struct {

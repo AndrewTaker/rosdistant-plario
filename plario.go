@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -13,22 +12,26 @@ import (
 )
 
 type Plario struct {
-	BaseURL         string
-	ModuleID        int
-	TeacherCourseID int
-	Culture         string
-	Token           string
-	Attempt         int
+	BaseURL string
+
+	SubjectID int
+	CourseID  int
+	ModuleID  int
+
+	Culture string
+	Token   string
+	Attempt int
 }
 
-func NewPlario(moduleID, teacherCourseID int, token string) *Plario {
+func NewPlario(token string) *Plario {
 	return &Plario{
-		BaseURL:         "https://api.plario.ru",
-		ModuleID:        moduleID,
-		TeacherCourseID: teacherCourseID,
-		Culture:         "ru",
-		Token:           token,
-		Attempt:         0,
+		BaseURL:   "https://api.plario.ru",
+		SubjectID: 0,
+		CourseID:  0,
+		ModuleID:  0,
+		Culture:   "ru",
+		Token:     token,
+		Attempt:   0,
 	}
 
 }
@@ -44,6 +47,7 @@ func (p *Plario) GetModules(client *http.Client) ([]Module, error) {
 	q.Set("dateFrom", "2025-11-30T21:00:00.000Z")
 	// q.Set("dateTo", time.Now().Format(time.RFC3339))
 	q.Set("dateTo", "2025-12-31T20:59:59.999Z")
+	q.Set("teacherCourseId", strconv.Itoa(p.CourseID))
 	baseURL.RawQuery = q.Encode()
 
 	req, err := http.NewRequest("GET", baseURL.String(), nil)
@@ -53,7 +57,6 @@ func (p *Plario) GetModules(client *http.Client) ([]Module, error) {
 
 	p.setHeaders(req)
 
-	log.Println(baseURL.String())
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -112,7 +115,7 @@ func (p *Plario) CompleteLesson(client *http.Client, activityID int) error {
 
 	queryParams := baseURL.Query()
 	queryParams.Add("moduleId", strconv.Itoa(p.ModuleID))
-	queryParams.Add("teacherCourseId", strconv.Itoa(p.TeacherCourseID))
+	queryParams.Add("teacherCourseId", strconv.Itoa(p.CourseID))
 	queryParams.Add("culture", p.Culture)
 	baseURL.RawQuery = queryParams.Encode()
 
@@ -142,7 +145,6 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 	var err error
 
 	if !secondAttempt {
-		log.Println("first attempt")
 		baseURL, err = url.Parse(p.BaseURL + "/learner/adaptiveLearning/checkAnswer")
 		if err != nil {
 			return nil, err
@@ -153,7 +155,7 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 			AnswerIDs:       answers,
 			AttemptID:       p.Attempt,
 			ModuleID:        p.ModuleID,
-			TeacherCourseID: p.TeacherCourseID,
+			TeacherCourseID: p.CourseID,
 		}
 
 		queryParams := baseURL.Query()
@@ -165,7 +167,6 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 			return nil, err
 		}
 	} else {
-		log.Println("second attempt")
 		baseURL, err = url.Parse(p.BaseURL + fmt.Sprintf("/learner/adaptiveLearning/checkAnswer/answerAttempt/%d/%d", activityID, p.Attempt))
 		if err != nil {
 			return nil, err
@@ -262,7 +263,7 @@ func (p *Plario) GetQuestion(client *http.Client) (*PlarioQuestionResponse, erro
 
 	queryParams := baseURL.Query()
 	queryParams.Add("moduleId", strconv.Itoa(p.ModuleID))
-	queryParams.Add("teacherCourseId", strconv.Itoa(p.TeacherCourseID))
+	queryParams.Add("teacherCourseId", strconv.Itoa(p.CourseID))
 	queryParams.Add("culture", p.Culture)
 	baseURL.RawQuery = queryParams.Encode()
 
