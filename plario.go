@@ -33,9 +33,76 @@ func NewPlario(moduleID, teacherCourseID int, token string) *Plario {
 
 }
 
+func (p *Plario) GetModules(client *http.Client) ([]Module, error) {
+	baseURL, err := url.Parse(p.BaseURL + "/learner/module/availableToLearner")
+	if err != nil {
+		return nil, err
+	}
+
+	q := baseURL.Query()
+	q.Set("culture", p.Culture)
+	q.Set("dateFrom", "2025-11-30T21:00:00.000Z")
+	// q.Set("dateTo", time.Now().Format(time.RFC3339))
+	q.Set("dateTo", "2025-12-31T20:59:59.999Z")
+	baseURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", baseURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	p.setHeaders(req)
+
+	log.Println(baseURL.String())
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var modules []Module
+	if err := json.NewDecoder(resp.Body).Decode(&modules); err != nil {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("decode err %d: %s", resp.StatusCode, string(b))
+	}
+
+	return modules, nil
+}
+
 // attempt is based on current activity id
 // activity id is just an id of a question
 // start activity -> get activity id -> get attempt based on activity -> post answer
+func (p *Plario) GetAvailable(client *http.Client) ([]Subject, error) {
+	baseURL, err := url.Parse(p.BaseURL + "/learner/course/available")
+	if err != nil {
+		return nil, err
+	}
+
+	q := baseURL.Query()
+	q.Set("culture", p.Culture)
+	baseURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", baseURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	p.setHeaders(req)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var subjects []Subject
+	if err := json.NewDecoder(resp.Body).Decode(&subjects); err != nil {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("decode err %d: %s", resp.StatusCode, string(b))
+	}
+
+	return subjects, nil
+}
 
 func (p *Plario) CompleteLesson(client *http.Client, activityID int) error {
 	baseURL, err := url.Parse(p.BaseURL + fmt.Sprintf("/learner/adaptiveLearning/completeLesson/%d/%d", activityID, p.Attempt))

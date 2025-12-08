@@ -2,6 +2,7 @@ package main
 
 type Exercise struct {
 	ActivityID      int              `json:"activityId"`
+	Content         string           `json:"content"`
 	PossibleAnswers []PossibleAnswer `json:"possibleAnswers"`
 }
 
@@ -31,4 +32,15 @@ type PlarioAnswerResponse struct {
 type Module struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+}
+
+type Course struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type Subject struct {
+	ID      int      `json:"id"`
+	Name    string   `json:"name"`
+	Courses []Course `json:"courses"`
 }

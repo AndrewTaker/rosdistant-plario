@@ -1,4 +1,4 @@
-curl 'https://api.plario.ru/learner/module/availableToLearner?teacherCourseId=2274&dateFrom=2025-11-30T21:00:00.000Z&dateTo=2025-12-31T20:59:59.999Z&culture=ru' \
+curl 'https://api.plario.ru/learner/module/availableToLearner?teacherCourseId=2274&dateFrom=2020-11-30T21:00:00.000Z&dateTo=2025-12-31T20:59:59.999Z&culture=ru' \
   -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0' \
   -H 'Accept: application/json, text/plain, */*' \
   -H 'Accept-Language: en-US,en;q=0.5' \
