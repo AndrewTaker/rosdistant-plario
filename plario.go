@@ -1,0 +1,200 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"path"
+	"strconv"
+)
+
+type Plario struct {
+	BaseURL         string
+	ModuleID        int
+	TeacherCourseID int
+	Culture         string
+	Token           string
+	Attempt         int
+}
+
+func NewPlario(moduleID, teacherCourseID int, token string) *Plario {
+	return &Plario{
+		BaseURL:         "https://api.plario.ru",
+		ModuleID:        moduleID,
+		TeacherCourseID: teacherCourseID,
+		Culture:         "ru",
+		Token:           token,
+		Attempt:         0,
+	}
+
+}
+
+// attempt is based on current activity id
+// activity id is just an id of a question
+// start activity -> get activity id -> get attempt based on activity -> post answer
+
+func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int) (*PlarioAnswerResponse, error) {
+	baseURL, err := url.Parse(p.BaseURL + "/learner/adaptiveLearning/checkAnswer")
+	if err != nil {
+		return nil, err
+	}
+
+	payload := PlarionAnswerRequest{
+		ActivityID:      activityID,
+		AnswerIDs:       answers,
+		AttemptID:       p.Attempt,
+		ModuleID:        p.ModuleID,
+		TeacherCourseID: p.TeacherCourseID,
+	}
+	log.Printf("PAYLOAD %+v", payload)
+
+	queryParams := baseURL.Query()
+	queryParams.Add("culture", p.Culture)
+	baseURL.RawQuery = queryParams.Encode()
+
+	bPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", baseURL.String(), bytes.NewBuffer(bPayload))
+	if err != nil {
+		return nil, err
+	}
+
+	p.setHeaders(req)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		log.Println(string(body))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var par PlarioAnswerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&par); err != nil {
+		log.Println("err in json decoder", resp.StatusCode)
+		return nil, err
+	}
+
+	return &par, nil
+}
+func (p *Plario) GetAttempt(client *http.Client, activityID int) (int, error) {
+	// modules/10/activities/851/attempts?culture=ru
+	// https://api.plario.ru/learner/adaptiveLearning/modules/12/activities/343/attempts%3Fculture=ru
+	baseURL, err := url.Parse(p.BaseURL + "/learner/adaptiveLearning")
+	if err != nil {
+		return 0, err
+	}
+
+	urlExtra := fmt.Sprintf("/modules/%d/activities/%d/attempts", p.ModuleID, activityID)
+	baseURL.Path = path.Join(baseURL.Path, urlExtra)
+
+	q := baseURL.Query()
+	q.Set("culture", p.Culture)
+	baseURL.RawQuery = q.Encode()
+
+	log.Println(baseURL.String())
+
+	req, err := http.NewRequest("POST", baseURL.String(), nil)
+	if err != nil {
+		return 0, err
+	}
+
+	p.setHeaders(req)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	log.Println("ATTEMPT STATUS CODE ", resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil
+	}
+	log.Println("ATTEMPT ID", string(body))
+
+	value, err := strconv.Atoi(string(body))
+	if err != nil {
+		return 0, nil
+	}
+
+	return value, nil
+}
+
+func (p *Plario) GetQuestion(client *http.Client) (*PlarioQuestionResponse, error) {
+	log.Println("start GetQuestion")
+	baseURL, err := url.Parse(p.BaseURL + "/learner/adaptiveLearning")
+	if err != nil {
+		return nil, err
+	}
+
+	queryParams := baseURL.Query()
+	queryParams.Add("moduleId", strconv.Itoa(p.ModuleID))
+	queryParams.Add("teacherCourseId", strconv.Itoa(p.TeacherCourseID))
+	queryParams.Add("culture", p.Culture)
+	baseURL.RawQuery = queryParams.Encode()
+
+	log.Println("parsed url to ", baseURL.String())
+	req, err := http.NewRequest("GET", baseURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	log.Println("sent req")
+
+	p.setHeaders(req)
+	log.Println("set headers")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	log.Println("got response")
+
+	if resp.StatusCode != http.StatusOK {
+		log.Println("bad status code ", resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		log.Println(string(body))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var pqr PlarioQuestionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pqr); err != nil {
+		log.Println("err in json decoder", resp.StatusCode)
+		return nil, err
+	}
+
+	return &pqr, nil
+}
+
+func (p *Plario) setHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.Token))
+	req.Header.Set("Origin", "https://my.plario.ru")
+	req.Header.Set("DNT", "1")
+	req.Header.Set("Sec-GPC", "1")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Referer", "https://my.plario.ru/")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-site")
+	req.Header.Set("TE", "trailers")
+}
