@@ -37,6 +37,38 @@ func NewPlario(moduleID, teacherCourseID int, token string) *Plario {
 // activity id is just an id of a question
 // start activity -> get activity id -> get attempt based on activity -> post answer
 
+func (p *Plario) CompleteLesson(client *http.Client, activityID int) error {
+	baseURL, err := url.Parse(p.BaseURL + fmt.Sprintf("/learner/adaptiveLearning/completeLesson/%d/%d", activityID, p.Attempt))
+	if err != nil {
+		return err
+	}
+
+	queryParams := baseURL.Query()
+	queryParams.Add("moduleId", strconv.Itoa(p.ModuleID))
+	queryParams.Add("teacherCourseId", strconv.Itoa(p.TeacherCourseID))
+	queryParams.Add("culture", p.Culture)
+	baseURL.RawQuery = queryParams.Encode()
+
+	req, err := http.NewRequest("POST", baseURL.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	p.setHeaders(req)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
 func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, secondAttempt bool) (*PlarioAnswerResponse, error) {
 	var baseURL *url.URL
 	var bPayload []byte
