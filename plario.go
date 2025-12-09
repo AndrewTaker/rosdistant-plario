@@ -11,6 +11,8 @@ import (
 	"strconv"
 )
 
+var ErrNoMoreActivity = fmt.Errorf("NoMoreActivity")
+
 type Plario struct {
 	BaseURL string
 
@@ -288,6 +290,10 @@ func (p *Plario) GetQuestion(client *http.Client) (*PlarioQuestionResponse, erro
 	var pqr PlarioQuestionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pqr); err != nil {
 		return nil, err
+	}
+
+	if pqr.ActivityStatus == "NoMoreActivity" {
+		return nil, fmt.Errorf("no more activity, too many mistakes")
 	}
 
 	return &pqr, nil

@@ -147,7 +147,7 @@ func main() {
 
 		if passedAnswer != responseAnswer[0] {
 			logger.Printf("wrong answer, submited %d but right one is %d", passedAnswer, responseAnswer[0])
-			logger.Println("submitting again with and saving to database", responseAnswer[0])
+			logger.Println("submitting again and saving to database", responseAnswer[0])
 
 			err := db.CreateQuestion(
 				question.Exercise.ActivityID,
