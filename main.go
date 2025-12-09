@@ -1,14 +1,14 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
-	"palario/pkg/database"
+	"palario/pkg/llm"
+	"strconv"
 	"time"
 
 	"github.com/rodaine/table"
@@ -18,6 +18,8 @@ var (
 	courseID, subjectID, moduleID int
 
 	plarioToken string
+
+	totalCorrent, totalWrong int
 )
 
 func main() {
@@ -28,33 +30,19 @@ func main() {
 		log.Fatal("gotta provide valid plario access token")
 	}
 
-	db, err := database.New(context.Background(), "plario.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	groq := llm.NewGroq(
+		os.Getenv("GROQ_TOKEN"),
+		"openai/gpt-oss-120b",
+		"Ты решаешь тест по математическому анализу. Ты получишь вопрос и множество ответов в формате latex, тебе нужно вернуть только id ответа",
+	)
 
 	client := &http.Client{}
 	plario := NewPlario(plarioToken)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// subjects: highest level like "Высшая математика"
 	subjects, err := plario.GetAvailable(client)
 	if err != nil {
 		log.Fatal("GetAvailable err", err)
-	}
-
-	// every subjects has an array of courses like "Математический анализ"
-	for _, s := range subjects {
-		err := db.CreateSubject(s.ID, s.Name)
-		if err != nil {
-			log.Fatal("db err", err)
-		}
-		for _, c := range s.Courses {
-			err = db.CreateCourse(c.ID, c.Name, s.ID)
-			if err != nil {
-				log.Fatal("db err", err)
-			}
-		}
 	}
 
 	printCoursesTable(subjects[0].Courses)
@@ -83,13 +71,6 @@ func main() {
 		log.Fatal("no modules")
 	}
 
-	for _, m := range modules {
-		err := db.CreateModule(m.ID, m.Name, courseID)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
 	printModulesTable(modules)
 	log.Println("enter module id to start:")
 	fmt.Scan(&moduleID)
@@ -103,8 +84,8 @@ func main() {
 		if err != nil {
 			logger.Fatal(err)
 		}
-		logger.SetPrefix(fmt.Sprintf("[C: %d, M: %d, Q: %d] ", plario.CourseID, plario.ModuleID, question.Exercise.ActivityID))
-		logger.Println("start")
+
+		logger.SetPrefix(Info(fmt.Sprintf("[C: %d, M: %d, Q: %d] ", plario.CourseID, plario.ModuleID, question.Exercise.ActivityID)))
 
 		attempt, err := plario.GetAttempt(client, question.Exercise.ActivityID)
 		if err != nil {
@@ -122,61 +103,35 @@ func main() {
 			continue
 		}
 
-		logger.Println("trying to get answer from db")
-		answer, err := db.GetAnswer(question.Exercise.ActivityID, subjectID, courseID, moduleID)
+		logger.Println("sending question to groq")
+		groqResponse, err := groq.SendGroqRequest(client, question.Exercise.ToString())
 		if err != nil {
 			logger.Fatal(err)
 		}
 
-		var passedAnswer int
-		if answer != 0 {
-			logger.Println("there is an answer in database ->", answer)
-			passedAnswer = answer
-		} else {
-			logger.Println("no answer in database")
-			index := rand.Intn(len(question.Exercise.PossibleAnswers))
-			passedAnswer = question.Exercise.PossibleAnswers[index].AnswerID
-		}
+		answer, _ := strconv.Atoi(groqResponse.Choices[0].Message.Content)
 
-		response, err := plario.PostAnswer(client, question.Exercise.ActivityID, []int{passedAnswer}, false)
+		response, err := plario.PostAnswer(client, question.Exercise.ActivityID, []int{answer}, false)
 		if err != nil {
 			logger.Fatal(err)
 		}
 
-		responseAnswer := response.RightAnswerIDs
+		rightAnswer := response.RightAnswerIDs[0]
+		logger.Printf(Important("groq -> %d, righ -> %d", answer, rightAnswer))
 
-		if passedAnswer != responseAnswer[0] {
-			logger.Printf("wrong answer, submited %d but right one is %d", passedAnswer, responseAnswer[0])
-			logger.Println("submitting again and saving to database", responseAnswer[0])
-
-			err := db.CreateQuestion(
-				question.Exercise.ActivityID,
-				question.Exercise.Content,
-				responseAnswer[0],
-				plario.SubjectID,
-				plario.CourseID,
-				plario.ModuleID,
-			)
-			if err != nil {
-				logger.Fatal(err)
-			}
-			_, _ = plario.PostAnswer(client, question.Exercise.ActivityID, []int{responseAnswer[0]}, true)
+		if answer != rightAnswer {
+			logger.Printf(Warn("wrong answer, submited %d but right one is %d, will submite again and go further", answer, rightAnswer))
+			totalWrong++
+			_, _ = plario.PostAnswer(client, question.Exercise.ActivityID, []int{rightAnswer}, true)
 		} else {
-			logger.Println("first try hit, saving to database and going further")
-			err := db.CreateQuestion(
-				question.Exercise.ActivityID,
-				question.Exercise.Content,
-				passedAnswer,
-				plario.SubjectID,
-				plario.CourseID,
-				plario.ModuleID,
-			)
-			if err != nil {
-				logger.Fatal(err)
-			}
+			logger.Println(Success("first try hit"))
+			totalCorrent++
 		}
 		time.Sleep(time.Duration(randomSleep) * time.Second)
 	}
+
+	logger.Println(Info("Total correct:", totalCorrent))
+	logger.Println(Info("Total wrong:", totalWrong))
 }
 
 func RandInRange(r *rand.Rand, min, max int) int {

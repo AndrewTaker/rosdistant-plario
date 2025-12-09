@@ -1,14 +1,36 @@
 package main
 
+import (
+	"fmt"
+)
+
 type Exercise struct {
 	ActivityID      int              `json:"activityId"`
 	Content         string           `json:"content"`
 	PossibleAnswers []PossibleAnswer `json:"possibleAnswers"`
 }
 
+func (e *Exercise) ToString() string {
+	s := fmt.Sprintf("Question: %s. Possible answers: ", e.Content)
+	if len(e.PossibleAnswers) > 0 {
+		for i, a := range e.PossibleAnswers {
+			if i == 0 {
+				s += "["
+			}
+			s += fmt.Sprintf("text: %s id: %d,", a.Text, a.AnswerID)
+		}
+		s += "]"
+	} else {
+		s += "[]"
+	}
+
+	return s
+}
+
 type PossibleAnswer struct {
-	AnswerID  int  `json:"answerId"`
-	IsCorrect bool `json:"isCorrect"`
+	AnswerID  int    `json:"answerId"`
+	IsCorrect bool   `json:"isCorrect"`
+	Text      string `json:"text"`
 }
 
 type PlarioQuestionResponse struct {
