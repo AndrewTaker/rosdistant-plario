@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"os"
@@ -11,45 +14,81 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/rodaine/table"
+	"golang.org/x/net/html"
 )
 
 var (
-	courseID, subjectID, moduleID int
+	subjectID, courseID, moduleID int
 
 	plarioToken string
+
+	info bool
 
 	totalCorrent, totalWrong int
 )
 
 func main() {
+	f, err := os.OpenFile("app.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
+	}
+	defer f.Close()
+
+	mw := io.MultiWriter(os.Stdout, f)
+	handler := slog.NewJSONHandler(mw, &slog.HandlerOptions{Level: slog.LevelDebug})
+	logger := slog.New(handler)
+
 	flag.StringVar(&plarioToken, "ptoken", "", "plario access token")
+	flag.BoolVar(&info, "info", false, "print out availabe subjects, courses and modules and exit")
+	flag.IntVar(&subjectID, "subject", 0, "subject_id")
+	flag.IntVar(&courseID, "course", 0, "course_id")
+	flag.IntVar(&moduleID, "module", 0, "module_id")
 	flag.Parse()
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	client := &http.Client{}
+	plario := NewPlario(plarioToken)
 
 	if plarioToken == "" {
 		log.Fatal("gotta provide valid plario access token")
 	}
 
+	if info {
+		subjects, err := plario.GetAvailable(client)
+		if err != nil {
+			logger.Error("e", "e", err)
+		}
+
+		courses := make(map[Course][]Module)
+		for _, s := range subjects {
+			for _, c := range s.Courses {
+				plario.CourseID = c.ID
+				modules, err := plario.GetModules(client)
+				if err != nil {
+					log.Fatal(err)
+				}
+				courses[c] = modules
+			}
+		}
+		printSubjectsTable(subjects, courses)
+		os.Exit(0)
+	}
+	plario.SubjectID = subjectID
+	plario.CourseID = courseID
+	plario.ModuleID = moduleID
+
 	groq := llm.NewGroq(
 		os.Getenv("GROQ_TOKEN"),
-		"openai/gpt-oss-120b",
-		"Ты решаешь тест по математическому анализу. Ты получишь вопрос и множество ответов в формате latex, тебе нужно вернуть только id ответа",
+		llm.ModelOpenAIGptOss120B,
+		"You are solving a test on a subject of mathematical analysis in russian. You will receive question and possible answers, it is in latex format. Only return id of correct answer, never return reasoning or any text data.",
 	)
 
-	client := &http.Client{}
-	plario := NewPlario(plarioToken)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	subjects, err := plario.GetAvailable(client)
-	if err != nil {
-		log.Fatal("GetAvailable err", err)
-	}
-
-	printCoursesTable(subjects[0].Courses)
-	log.Println("enter course id to start:")
-	fmt.Scan(&courseID)
-	plario.SubjectID = subjects[0].ID
-	plario.CourseID = courseID
+	// subjects, err := plario.GetAvailable(client)
+	// if err != nil {
+	// 	logger.Error("", err)
+	// }
 
 	// module belongs to a course
 	// 	plario subject 								-> Высшая математика
@@ -71,98 +110,117 @@ func main() {
 		log.Fatal("no modules")
 	}
 
-	printModulesTable(modules)
-	log.Println("enter module id to start:")
-	fmt.Scan(&moduleID)
-	plario.ModuleID = moduleID
-
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.Lmsgprefix)
 	for {
 		randomSleep := RandInRange(r, 5, 10)
 
 		question, err := plario.GetQuestion(client)
 		if err != nil {
-			logger.Fatal(err)
+			logger.Error(err.Error())
+			break
 		}
 
-		logger.SetPrefix(Info(fmt.Sprintf("[C: %d, M: %d, Q: %d] ", plario.CourseID, plario.ModuleID, question.Exercise.ActivityID)))
+		withMeta := logger.WithGroup("meta").With(
+			slog.Int("course_id", plario.CourseID),
+			slog.Int("module_id", plario.ModuleID),
+			slog.Int("question_id", question.Exercise.ActivityID),
+		)
 
 		attempt, err := plario.GetAttempt(client, question.Exercise.ActivityID)
 		if err != nil {
-			logger.Fatal(err)
+			withMeta.Error(err.Error())
+			break
 		}
 		plario.Attempt = attempt
 
 		if len(question.Exercise.PossibleAnswers) == 0 {
-			logger.Println("no answers in response, probably a theory, submitting")
+			withMeta.Info("no answers in response, probably a theory, submitting")
 			err := plario.CompleteLesson(client, question.Exercise.ActivityID)
 			if err != nil {
-				logger.Fatal(err)
+				withMeta.Error(err.Error())
+				break
 			}
 			time.Sleep(time.Duration(randomSleep) * time.Second)
 			continue
 		}
 
-		logger.Println("sending question to groq")
+		withMeta.Info("sending question to groq")
 		groqResponse, err := groq.SendGroqRequest(client, question.Exercise.ToString())
 		if err != nil {
-			logger.Fatal(err)
+			withMeta.Error(err.Error())
+			break
 		}
 
-		answer, _ := strconv.Atoi(groqResponse.Choices[0].Message.Content)
+		if len(groqResponse.Choices) == 0 {
+			withMeta.Error("groq returned bad response", err)
+			break
+		}
+
+		answer, err := strconv.Atoi(groqResponse.Choices[0].Message.Content)
+		if err != nil {
+			withMeta.Error(err.Error())
+			break
+		}
 
 		response, err := plario.PostAnswer(client, question.Exercise.ActivityID, []int{answer}, false)
 		if err != nil {
-			logger.Fatal(err)
+			withMeta.Error(err.Error())
+			break
 		}
 
 		rightAnswer := response.RightAnswerIDs[0]
-		logger.Printf(Important("groq -> %d, righ -> %d", answer, rightAnswer))
+		withMeta.Info(fmt.Sprintf("groq -> %d, righ -> %d", answer, rightAnswer))
 
 		if answer != rightAnswer {
-			logger.Printf(Warn("wrong answer, submited %d but right one is %d, will submite again and go further", answer, rightAnswer))
+			withMeta.Warn(fmt.Sprintf("wrong answer, submited %d but right one is %d, will submite again and go further", answer, rightAnswer))
 			totalWrong++
-			_, _ = plario.PostAnswer(client, question.Exercise.ActivityID, []int{rightAnswer}, true)
+			_, err = plario.PostAnswer(client, question.Exercise.ActivityID, []int{rightAnswer}, true)
+			if err != nil {
+				withMeta.Error(err.Error())
+				break
+			}
 		} else {
-			logger.Println(Success("first try hit"))
+			withMeta.Info("first try hit")
 			totalCorrent++
 		}
 		time.Sleep(time.Duration(randomSleep) * time.Second)
 	}
 
-	logger.Println(Info("Total correct:", totalCorrent))
-	logger.Println(Info("Total wrong:", totalWrong))
+	logger.Info("Total correct", "count", totalCorrent)
+	logger.Info("Total wrong", "count", totalWrong)
 }
 
 func RandInRange(r *rand.Rand, min, max int) int {
 	return r.Intn(max-min+1) + min
 }
 
-func printModulesTable(objs []Module) {
-	t := table.New("ID", "NAME", "MASTERY")
-	for _, o := range objs {
-		t.AddRow(o.ID, o.Name, fmt.Sprintf("%.2f (%.2f%%)", o.Mastery, o.Mastery*100))
-	}
-	log.Println()
-	t.Print()
-}
+func printSubjectsTable(objs []Subject, courses map[Course][]Module) {
+	headerFmt := color.New(color.FgWhite, color.Underline, color.Bold, color.Underline).SprintfFunc()
+	columnFmt := color.New(color.FgYellow).SprintfFunc()
 
-func printSubjectsTable(objs []Subject) {
-	t := table.New("ID", "NAME")
+	t := table.New("s_id", "s_name", "c_id", "c_name", "m_id", "m_name", "m_mastery")
+	t.WithHeaderFormatter(headerFmt).WithFirstColumnFormatter(columnFmt)
+
 	for _, o := range objs {
-		for _, s := range o.Courses {
-			t.AddRow(s.ID, s.Name)
+		for c, modules := range courses {
+			for _, m := range modules {
+				t.AddRow(o.ID, o.Name, c.ID, c.Name, m.ID, m.Name, fmt.Sprintf("%.2f (%.2f%%)", m.Mastery, m.Mastery*100))
+			}
 		}
 	}
-	log.Println()
 	t.Print()
 }
 
-func printCoursesTable(objs []Course) {
-	t := table.New("ID", "NAME")
-	for _, o := range objs {
-		t.AddRow(o.ID, o.Name)
+func StripHTMLKeepLatex(s string) string {
+	var b bytes.Buffer
+	z := html.NewTokenizer(bytes.NewBufferString(s))
+
+	for {
+		tt := z.Next()
+		switch tt {
+		case html.ErrorToken:
+			return b.String()
+		case html.TextToken:
+			b.Write(z.Text())
+		}
 	}
-	log.Println()
-	t.Print()
 }

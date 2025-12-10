@@ -8,13 +8,17 @@ import (
 	"net/http"
 )
 
+var (
+	ErrLimitReached = fmt.Errorf("today's limit for model expired")
+)
+
 type Groq struct {
 	Token        string
-	Model        string
+	Model        Model
 	Instructions string
 }
 
-func NewGroq(token, model, instructions string) *Groq {
+func NewGroq(token string, model Model, instructions string) *Groq {
 	return &Groq{
 		Token:        token,
 		Model:        model,
@@ -24,7 +28,7 @@ func NewGroq(token, model, instructions string) *Groq {
 
 func (g *Groq) SendGroqRequest(client *http.Client, question string) (*GroqResponse, error) {
 	reqBody := GroqRequest{
-		Model:            g.Model,
+		Model:            string(g.Model),
 		IncludeReasoning: false,
 		Messages: []Message{
 			{Role: "system", Content: g.Instructions},
@@ -49,6 +53,10 @@ func (g *Groq) SendGroqRequest(client *http.Client, question string) (*GroqRespo
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, ErrLimitReached
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -9,9 +9,12 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"strings"
 )
 
-var ErrNoMoreActivity = fmt.Errorf("NoMoreActivity")
+var (
+	ErrNoMoreActivity = fmt.Errorf("NoMoreActivity")
+)
 
 type Plario struct {
 	BaseURL string
@@ -206,6 +209,12 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound && strings.Contains(string(body), "ModuleSessionNotFoundOrExpired") {
+			_, err := client.Do(req)
+			if err != nil {
+				return nil, err
+			}
+		}
 		return nil, fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
 	}
 

@@ -1,8 +1,6 @@
 package main
 
-import (
-	"fmt"
-)
+import "encoding/json"
 
 type Exercise struct {
 	ActivityID      int              `json:"activityId"`
@@ -11,21 +9,41 @@ type Exercise struct {
 }
 
 func (e *Exercise) ToString() string {
-	s := fmt.Sprintf("Question: %s. Possible answers: ", e.Content)
-	if len(e.PossibleAnswers) > 0 {
-		for i, a := range e.PossibleAnswers {
-			if i == 0 {
-				s += "["
-			}
-			s += fmt.Sprintf("text: %s id: %d,", a.Text, a.AnswerID)
-		}
-		s += "]"
-	} else {
-		s += "[]"
+	type Answer struct {
+		ID     int    `json:"id"`
+		Option string `json:"answer"`
+	}
+	type Quiz struct {
+		Question string   `json:"question"`
+		Answers  []Answer `json:"answers"`
 	}
 
-	return s
+	var quiz Quiz
+	quiz.Question = StripHTMLKeepLatex(e.Content)
+	for _, i := range e.PossibleAnswers {
+		quiz.Answers = append(quiz.Answers, Answer{ID: i.AnswerID, Option: StripHTMLKeepLatex(i.Text)})
+	}
+	s, _ := json.Marshal(quiz)
+	return string(s)
 }
+
+// func (e *Exercise) ToString() string {
+// 	s := fmt.Sprintf("Question: %s. Possible answers: ", StripHTMLKeepLatex(e.Content))
+// 	if len(e.PossibleAnswers) > 0 {
+// 		for i, a := range e.PossibleAnswers {
+// 			if i == 0 {
+// 				s += "["
+// 			}
+// 			text := StripHTMLKeepLatex(a.Text)
+// 			s += fmt.Sprintf("text: %s id: %d,", text, a.AnswerID)
+// 		}
+// 		s += "]"
+// 	} else {
+// 		s += "[]"
+// 	}
+//
+// 	return s
+// }
 
 type PossibleAnswer struct {
 	AnswerID  int    `json:"answerId"`
