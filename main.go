@@ -21,12 +21,14 @@ import (
 
 var (
 	subjectID, courseID, moduleID int
+	plarioToken                   string
 
-	plarioToken string
-
-	info bool
+	info      bool
+	groqToken string
 
 	totalCorrent, totalWrong int
+
+	logger *slog.Logger
 )
 
 func main() {
@@ -38,9 +40,10 @@ func main() {
 
 	mw := io.MultiWriter(os.Stdout, f)
 	handler := slog.NewJSONHandler(mw, &slog.HandlerOptions{Level: slog.LevelDebug})
-	logger := slog.New(handler)
+	logger = slog.New(handler)
 
 	flag.StringVar(&plarioToken, "ptoken", "", "plario access token")
+	flag.StringVar(&groqToken, "gtoken", "", "groq api token")
 	flag.BoolVar(&info, "info", false, "print out availabe subjects, courses and modules and exit")
 	flag.IntVar(&subjectID, "subject", 0, "subject_id")
 	flag.IntVar(&courseID, "course", 0, "course_id")
@@ -51,14 +54,15 @@ func main() {
 	client := &http.Client{}
 	plario := NewPlario(plarioToken)
 
-	if plarioToken == "" {
-		log.Fatal("gotta provide valid plario access token")
+	if plarioToken == "" || groqToken == "" {
+		flag.Usage()
+		os.Exit(1)
 	}
 
 	if info {
 		subjects, err := plario.GetAvailable(client)
 		if err != nil {
-			logger.Error("e", "e", err)
+			logger.Error("plario.GetAvailable", "message", err)
 		}
 
 		courses := make(map[Course][]Module)
@@ -67,7 +71,7 @@ func main() {
 				plario.CourseID = c.ID
 				modules, err := plario.GetModules(client)
 				if err != nil {
-					log.Fatal(err)
+					logger.Error("plario.GetModules", "message", err)
 				}
 				courses[c] = modules
 			}
@@ -85,11 +89,6 @@ func main() {
 		"You are solving a test on a subject of mathematical analysis in russian. You will receive question and possible answers, it is in latex format. Only return id of correct answer, never return reasoning or any text data.",
 	)
 
-	// subjects, err := plario.GetAvailable(client)
-	// if err != nil {
-	// 	logger.Error("", err)
-	// }
-
 	// module belongs to a course
 	// 	plario subject 								-> Высшая математика
 	//	rosdistant course 							-> Математический анализ
@@ -102,35 +101,29 @@ func main() {
 	//	-> subject
 	//		-> []course
 	//			-> []module
-	modules, err := plario.GetModules(client)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if len(modules) == 0 {
-		log.Fatal("no modules")
-	}
 
 	for {
 		randomSleep := RandInRange(r, 5, 10)
 
 		question, err := plario.GetQuestion(client)
 		if err != nil {
+			logger.Error("plario.GetQuestion", "message", err)
+			break
+		}
+
+		attempt, err := plario.GetAttempt(client, question.Exercise.ActivityID)
+		if err != nil {
 			logger.Error(err.Error())
 			break
 		}
+		plario.Attempt = attempt
 
 		withMeta := logger.WithGroup("meta").With(
 			slog.Int("course_id", plario.CourseID),
 			slog.Int("module_id", plario.ModuleID),
 			slog.Int("question_id", question.Exercise.ActivityID),
+			slog.Int("attempt_id", plario.Attempt),
 		)
-
-		attempt, err := plario.GetAttempt(client, question.Exercise.ActivityID)
-		if err != nil {
-			withMeta.Error(err.Error())
-			break
-		}
-		plario.Attempt = attempt
 
 		if len(question.Exercise.PossibleAnswers) == 0 {
 			withMeta.Info("no answers in response, probably a theory, submitting")
@@ -151,31 +144,31 @@ func main() {
 		}
 
 		if len(groqResponse.Choices) == 0 {
-			withMeta.Error("groq returned bad response", err)
+			withMeta.Error("groq returned bad response", "message", err)
 			break
 		}
 
 		answer, err := strconv.Atoi(groqResponse.Choices[0].Message.Content)
 		if err != nil {
-			withMeta.Error(err.Error())
+			withMeta.Error("could not convert atoi", "message", err.Error())
 			break
 		}
 
 		response, err := plario.PostAnswer(client, question.Exercise.ActivityID, []int{answer}, false)
 		if err != nil {
-			withMeta.Error(err.Error())
+			withMeta.Error("p.PostAnswer", "message", err.Error())
 			break
 		}
 
 		rightAnswer := response.RightAnswerIDs[0]
-		withMeta.Info(fmt.Sprintf("groq -> %d, righ -> %d", answer, rightAnswer))
+		withMeta.Info(fmt.Sprintf("groq -> %d, right -> %d", answer, rightAnswer))
 
 		if answer != rightAnswer {
-			withMeta.Warn(fmt.Sprintf("wrong answer, submited %d but right one is %d, will submite again and go further", answer, rightAnswer))
+			withMeta.Warn(fmt.Sprintf("wrong answer, submited %d but right one is %d, will submit again and go further", answer, rightAnswer))
 			totalWrong++
 			_, err = plario.PostAnswer(client, question.Exercise.ActivityID, []int{rightAnswer}, true)
 			if err != nil {
-				withMeta.Error(err.Error())
+				withMeta.Error("p.PostAnswer", "message", err.Error())
 				break
 			}
 		} else {

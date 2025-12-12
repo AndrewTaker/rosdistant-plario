@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -139,7 +140,7 @@ func (p *Plario) CompleteLesson(client *http.Client, activityID int) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("p.CompleteLesson: bad status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -148,6 +149,7 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 	var baseURL *url.URL
 	var bPayload []byte
 	var err error
+	var payload PlarionAnswerRequest
 
 	if !secondAttempt {
 		baseURL, err = url.Parse(p.BaseURL + "/learner/adaptiveLearning/checkAnswer")
@@ -155,7 +157,7 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 			return nil, err
 		}
 
-		payload := PlarionAnswerRequest{
+		payload = PlarionAnswerRequest{
 			ActivityID:      activityID,
 			AnswerIDs:       answers,
 			AttemptID:       p.Attempt,
@@ -172,7 +174,7 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 			return nil, err
 		}
 	} else {
-		baseURL, err = url.Parse(p.BaseURL + fmt.Sprintf("/learner/adaptiveLearning/checkAnswer/answerAttempt/%d/%d", activityID, p.Attempt))
+		baseURL, err = url.Parse(p.BaseURL + fmt.Sprintf("/learner/adaptiveLearning/answerAttempt/%d/%d", activityID, p.Attempt))
 		if err != nil {
 			return nil, err
 		}
@@ -201,6 +203,11 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	logger.Debug("post_answer",
+		"request_url", req.URL.String(),
+		"request_method", req.Method,
+		"request_payload", string(bPayload),
+	)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -215,11 +222,11 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 				return nil, err
 			}
 		}
-		return nil, fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("p.PostAnswer: bad status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	var par PlarioAnswerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&par); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&par); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 
@@ -293,7 +300,7 @@ func (p *Plario) GetQuestion(client *http.Client) (*PlarioQuestionResponse, erro
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("bad status code %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("p.GetQuestion: bad status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	var pqr PlarioQuestionResponse

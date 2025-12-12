@@ -58,11 +58,11 @@ type PlarioQuestionResponse struct {
 
 // --data-raw '{"activityId":856,"attemptId":9188881,"answerIds":[250],"moduleId":12,"teacherCourseId":2274}'
 type PlarionAnswerRequest struct {
-	ActivityID      int   `json:"activityId"`
-	AttemptID       int   `json:"attemptId"`
-	AnswerIDs       []int `json:"answerIds"`
-	ModuleID        int   `json:"moduleId"`
-	TeacherCourseID int   `json:"teacherCourseId"`
+	ActivityID      int   `json:"activityId,omitempty"`
+	AttemptID       int   `json:"attemptId,omitempty"`
+	AnswerIDs       []int `json:"answerIds,omitempty"`
+	ModuleID        int   `json:"moduleId,omitempty"`
+	TeacherCourseID int   `json:"teacherCourseId,omitempty"`
 }
 
 type PlarioAnswerResponse struct {
