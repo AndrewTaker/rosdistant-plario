@@ -28,26 +28,20 @@ var (
 
 	totalCorrent, totalWrong int
 
-	logger *slog.Logger
+	logger      *slog.Logger
+	loggerLevel slog.Level
+	lLevel      string
 )
 
 func main() {
-	f, err := os.OpenFile("app.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed to open log file: %v", err)
-	}
-	defer f.Close()
-
-	mw := io.MultiWriter(os.Stdout, f)
-	handler := slog.NewJSONHandler(mw, &slog.HandlerOptions{Level: slog.LevelDebug})
-	logger = slog.New(handler)
-
 	flag.StringVar(&plarioToken, "ptoken", "", "plario access token")
 	flag.StringVar(&groqToken, "gtoken", "", "groq api token")
 	flag.BoolVar(&info, "info", false, "print out availabe subjects, courses and modules and exit")
 	flag.IntVar(&subjectID, "subject", 0, "subject_id")
 	flag.IntVar(&courseID, "course", 0, "course_id")
 	flag.IntVar(&moduleID, "module", 0, "module_id")
+
+	flag.StringVar(&lLevel, "loglevel", "info", "provide to change log level")
 	flag.Parse()
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -58,6 +52,22 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	if lLevel == "info" {
+		loggerLevel = slog.LevelInfo
+	} else {
+		loggerLevel = slog.LevelDebug
+	}
+
+	f, err := os.OpenFile("app.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
+	}
+	defer f.Close()
+
+	mw := io.MultiWriter(os.Stdout, f)
+	handler := slog.NewJSONHandler(mw, &slog.HandlerOptions{Level: loggerLevel})
+	logger = slog.New(handler)
 
 	if info {
 		subjects, err := plario.GetAvailable(client)

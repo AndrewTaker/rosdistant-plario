@@ -11,7 +11,20 @@ build:
 		ARCH=$${target#*/}; \
 		echo "Building $$OS/$$ARCH..."; \
 		OUT_NAME=$(BINARY_NAME); \
-		if [ $$OS = "windows" ]; then OUT_NAME=$${OUT_NAME}.exe; fi; \
-		GOOS=$$OS GOARCH=$$ARCH go build -o bin/$$OS_$$ARCH/$$OUT_NAME .; \
-	done
+		if [ "$$OS" = "windows" ]; then OUT_NAME=$${OUT_NAME}.exe; fi; \
+		mkdir -p bin/$$OS/$$ARCH; \
+		GOOS=$$OS GOARCH=$$ARCH go build -o bin/$$OS/$$ARCH/$$OUT_NAME .; \
+		done
+
+clean:
+	@echo "Cleaning binaries..."
+	@for target in $(OS_ARCHS); do \
+		OS=$${target%/*}; \
+		ARCH=$${target#*/}; \
+		echo "Removing $$OS/$$ARCH..."; \
+		OUT_NAME=$(BINARY_NAME); \
+		if [ "$$OS" = "windows" ]; then OUT_NAME=$${OUT_NAME}.exe; fi; \
+		mkdir -p bin/$$OS/$$ARCH; \
+		GOOS=$$OS GOARCH=$$ARCH rm bin/$$OS/$$ARCH/$$OUT_NAME; \
+		done
 
