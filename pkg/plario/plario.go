@@ -1,4 +1,4 @@
-package main
+package plario
 
 import (
 	"bytes"
@@ -203,11 +203,11 @@ func (p *Plario) PostAnswer(client *http.Client, activityID int, answers []int, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	logger.Debug("post_answer",
-		"request_url", req.URL.String(),
-		"request_method", req.Method,
-		"request_payload", string(bPayload),
-	)
+	// logger.Debug("post_answer",
+	// 	"request_url", req.URL.String(),
+	// 	"request_method", req.Method,
+	// 	"request_payload", string(bPayload),
+	// )
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

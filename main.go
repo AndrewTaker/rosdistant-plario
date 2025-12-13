@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -11,12 +10,12 @@ import (
 	"net/http"
 	"os"
 	"palario/pkg/llm"
+	pl "palario/pkg/plario"
 	"strconv"
 	"time"
 
 	"github.com/fatih/color"
 	"github.com/rodaine/table"
-	"golang.org/x/net/html"
 )
 
 var (
@@ -25,6 +24,9 @@ var (
 
 	info      bool
 	groqToken string
+
+	masteryCap   float64
+	isMasteryCap bool
 
 	totalCorrent, totalWrong int
 
@@ -40,17 +42,22 @@ func main() {
 	flag.IntVar(&subjectID, "subject", 0, "subject_id")
 	flag.IntVar(&courseID, "course", 0, "course_id")
 	flag.IntVar(&moduleID, "module", 0, "module_id")
+	flag.Float64Var(&masteryCap, "till_mastery", 0.0, "provide if you want to stop program execution at certain mastery level")
 
 	flag.StringVar(&lLevel, "loglevel", "info", "provide to change log level")
 	flag.Parse()
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	client := &http.Client{}
-	plario := NewPlario(plarioToken)
+	plario := pl.NewPlario(plarioToken)
 
 	if plarioToken == "" || groqToken == "" {
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	if masteryCap != 0.0 {
+		isMasteryCap = true
 	}
 
 	if lLevel == "info" {
@@ -75,7 +82,7 @@ func main() {
 			logger.Error("plario.GetAvailable", "message", err)
 		}
 
-		courses := make(map[Course][]Module)
+		courses := make(map[pl.Course][]pl.Module)
 		for _, s := range subjects {
 			for _, c := range s.Courses {
 				plario.CourseID = c.ID
@@ -185,6 +192,25 @@ func main() {
 			withMeta.Info("first try hit")
 			totalCorrent++
 		}
+
+		ms, err := plario.GetModules(client)
+		if err != nil {
+			withMeta.Error("p.GetModules", "message", err.Error())
+		}
+
+		var currentMastery float64
+		for _, m := range ms {
+			if m.ID == plario.ModuleID {
+				currentMastery = m.Mastery
+				logger.Info("mastery", "value", slog.Float64Value(m.Mastery))
+				break
+			}
+		}
+
+		if isMasteryCap && currentMastery >= masteryCap {
+			logger.Info("mastery", "hit mastery cap", slog.Float64Value(currentMastery))
+			break
+		}
 		time.Sleep(time.Duration(randomSleep) * time.Second)
 	}
 
@@ -196,7 +222,7 @@ func RandInRange(r *rand.Rand, min, max int) int {
 	return r.Intn(max-min+1) + min
 }
 
-func printSubjectsTable(objs []Subject, courses map[Course][]Module) {
+func printSubjectsTable(objs []pl.Subject, courses map[pl.Course][]pl.Module) {
 	headerFmt := color.New(color.FgWhite, color.Underline, color.Bold, color.Underline).SprintfFunc()
 	columnFmt := color.New(color.FgYellow).SprintfFunc()
 
@@ -211,19 +237,4 @@ func printSubjectsTable(objs []Subject, courses map[Course][]Module) {
 		}
 	}
 	t.Print()
-}
-
-func StripHTMLKeepLatex(s string) string {
-	var b bytes.Buffer
-	z := html.NewTokenizer(bytes.NewBufferString(s))
-
-	for {
-		tt := z.Next()
-		switch tt {
-		case html.ErrorToken:
-			return b.String()
-		case html.TextToken:
-			b.Write(z.Text())
-		}
-	}
 }

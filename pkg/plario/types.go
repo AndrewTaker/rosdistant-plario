@@ -1,6 +1,11 @@
-package main
+package plario
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+
+	"golang.org/x/net/html"
+)
 
 type Exercise struct {
 	ActivityID      int              `json:"activityId"`
@@ -72,7 +77,7 @@ type PlarioAnswerResponse struct {
 type Module struct {
 	ID      int     `json:"id"`
 	Name    string  `json:"name"`
-	Mastery float32 `json:"mastery"`
+	Mastery float64 `json:"mastery"`
 }
 
 type Course struct {
@@ -84,4 +89,19 @@ type Subject struct {
 	ID      int      `json:"id"`
 	Name    string   `json:"name"`
 	Courses []Course `json:"courses"`
+}
+
+func StripHTMLKeepLatex(s string) string {
+	var b bytes.Buffer
+	z := html.NewTokenizer(bytes.NewBufferString(s))
+
+	for {
+		tt := z.Next()
+		switch tt {
+		case html.ErrorToken:
+			return b.String()
+		case html.TextToken:
+			b.Write(z.Text())
+		}
+	}
 }
