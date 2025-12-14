@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 )
 
@@ -16,13 +17,15 @@ type Groq struct {
 	Token        string
 	Model        Model
 	Instructions string
+	logger       *slog.Logger
 }
 
-func NewGroq(token string, model Model, instructions string) *Groq {
+func NewGroq(token string, model Model, instructions string, logger *slog.Logger) *Groq {
 	return &Groq{
 		Token:        token,
 		Model:        model,
 		Instructions: instructions,
+		logger:       logger,
 	}
 }
 

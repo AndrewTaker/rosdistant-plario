@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -27,9 +28,11 @@ type Plario struct {
 	Culture string
 	Token   string
 	Attempt int
+
+	logger *slog.Logger
 }
 
-func NewPlario(token string) *Plario {
+func NewPlario(token string, logger *slog.Logger) *Plario {
 	return &Plario{
 		BaseURL:   "https://api.plario.ru",
 		SubjectID: 0,
@@ -38,6 +41,7 @@ func NewPlario(token string) *Plario {
 		Culture:   "ru",
 		Token:     token,
 		Attempt:   0,
+		logger:    logger,
 	}
 
 }
