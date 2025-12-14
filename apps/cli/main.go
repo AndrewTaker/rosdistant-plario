@@ -100,13 +100,28 @@ func main() {
 	plario.CourseID = courseID
 	plario.ModuleID = moduleID
 
+	subjects, err := plario.GetAvailable(client)
+	if err != nil {
+		logger.Error(err.Error())
+	}
+
+	var cname string
+	for _, s := range subjects {
+		for _, c := range s.Courses {
+			if c.ID == courseID {
+				cname = c.Name
+			}
+		}
+	}
+
 	groq := llm.NewGroq(
-		os.Getenv("GROQ_TOKEN"),
+		groqToken,
 		model,
-		"You are solving a test on a subject of mathematical analysis in russian. You will receive question and possible answers, it is in latex format. Only return id of correct answer, never return reasoning or any text data.",
+		fmt.Sprintf("You are solving a test on a subject of %s in russian. You will receive question and possible answers, it is in latex format. Only return id of correct answer, never return reasoning or any text data.", cname),
 		logger,
 	)
 
+	logger.Info(groq.Instructions)
 	for {
 		select {
 		case <-ctx.Done():
@@ -146,7 +161,6 @@ func main() {
 				continue
 			}
 
-			withMeta.Info("sending question to groq")
 			groqResponse, err := groq.SendGroqRequest(client, question.Exercise.ToString())
 			if err != nil {
 				withMeta.Error(err.Error())
