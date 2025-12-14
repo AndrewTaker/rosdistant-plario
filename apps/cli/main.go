@@ -12,14 +12,13 @@ import (
 
 	"strconv"
 	"time"
-
-	"github.com/fatih/color"
-	"github.com/rodaine/table"
 )
 
 var (
 	subjectID, courseID, moduleID int
 	plarioToken, groqToken        string
+	model                         llm.Model
+	rMin, rMax                    int
 
 	infoMode, browserMode bool
 
@@ -32,14 +31,17 @@ var (
 )
 
 func main() {
-	flag.StringVar(&plarioToken, "ptoken", "", "plario access token")
-	flag.StringVar(&groqToken, "gtoken", "", "groq api token")
-	flag.StringVar(&logLevel, "loglevel", "info", "provide to change log level")
-	flag.IntVar(&subjectID, "subject", 0, "subject_id")
-	flag.IntVar(&courseID, "course", 0, "course_id")
-	flag.IntVar(&moduleID, "module", 0, "module_id")
-	flag.Float64Var(&masteryCap, "till_mastery", 0.0, "provide if you want to stop program execution at certain mastery level")
-	flag.BoolVar(&infoMode, "info", false, "print out availabe subjects, courses and modules and exit")
+	flag.StringVar(&plarioToken, "ptoken", "", "required: plario access token")
+	flag.StringVar(&groqToken, "gtoken", "", "required: groq api token")
+	flag.StringVar(&logLevel, "loglevel", "info", "optional: provide to change log level")
+	flag.IntVar(&subjectID, "subject", 0, "required if not info mode: subject_id")
+	flag.IntVar(&courseID, "course", 0, "required if not info mode: course_id")
+	flag.IntVar(&moduleID, "module", 0, "required if not info mode: module_id")
+	flag.Float64Var(&masteryCap, "till_mastery", 0.0, "optional: provide if you want to stop program execution at certain mastery level float 2.f")
+	flag.BoolVar(&infoMode, "infomode", false, "optional: print out availabe subjects, courses, modules and exit with 0")
+	flag.IntVar(&rMin, "rmin", 5, "optional: set minimum value for random delay between each question submission")
+	flag.IntVar(&rMax, "rmax", 10, "optional: set maximum value for random delay between each question submission")
+	flag.Var(&model, "model", "required: choose from available groq models")
 	flag.Parse()
 
 	if plarioToken == "" || groqToken == "" {
@@ -49,6 +51,11 @@ func main() {
 
 	if masteryCap != 0.0 {
 		isMasteryCap = true
+	}
+
+	if !model.IsValid() {
+		fmt.Printf("No such model, pick one from %v\n", llm.All())
+		os.Exit(1)
 	}
 
 	logger := InitLogger(logLevel)
@@ -71,13 +78,13 @@ func main() {
 
 	groq := llm.NewGroq(
 		os.Getenv("GROQ_TOKEN"),
-		llm.ModelOpenAIGptOss120B,
+		model,
 		"You are solving a test on a subject of mathematical analysis in russian. You will receive question and possible answers, it is in latex format. Only return id of correct answer, never return reasoning or any text data.",
 		logger,
 	)
 
 	for {
-		randomSleep := RandInRange(r, 5, 10)
+		randomSleep := RandInRange(r, rMin, rMax)
 
 		question, err := plario.GetQuestion(client)
 		if err != nil {
@@ -173,25 +180,4 @@ func main() {
 
 	logger.Info("Total correct", "count", totalCorrent)
 	logger.Info("Total wrong", "count", totalWrong)
-}
-
-func RandInRange(r *rand.Rand, min, max int) int {
-	return r.Intn(max-min+1) + min
-}
-
-func printSubjectsTable(objs []pl.Subject, courses map[pl.Course][]pl.Module) {
-	headerFmt := color.New(color.FgWhite, color.Underline, color.Bold, color.Underline).SprintfFunc()
-	columnFmt := color.New(color.FgYellow).SprintfFunc()
-
-	t := table.New("s_id", "s_name", "c_id", "c_name", "m_id", "m_name", "m_mastery")
-	t.WithHeaderFormatter(headerFmt).WithFirstColumnFormatter(columnFmt)
-
-	for _, o := range objs {
-		for c, modules := range courses {
-			for _, m := range modules {
-				t.AddRow(o.ID, o.Name, c.ID, c.Name, m.ID, m.Name, fmt.Sprintf("%.2f (%.2f%%)", m.Mastery, m.Mastery*100))
-			}
-		}
-	}
-	t.Print()
 }

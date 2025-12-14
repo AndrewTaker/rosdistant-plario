@@ -1,5 +1,7 @@
 package llm
 
+import "fmt"
+
 type Model string
 
 const (
@@ -20,3 +22,43 @@ const (
 	ModelOpenAIGptOssSafeguard20B      Model = "openai/gpt-oss-safeguard-20b"
 	ModelQwen32B                       Model = "qwen/qwen3-32b"
 )
+
+func (m *Model) String() string {
+	return fmt.Sprintf("%v", *m)
+}
+func (m *Model) Set(value string) error {
+	*m = Model(value)
+	return nil
+}
+
+var modelSet = map[Model]struct{}{
+	ModelAllam27B:                      {},
+	ModelGroqCompound:                  {},
+	ModelGroqCompoundMini:              {},
+	ModelLlama318BInstant:              {},
+	ModelLlama3370BVersatile:           {},
+	ModelLlama4Maverick17B128EInstruct: {},
+	ModelLlama4Scout17B16EInstruct:     {},
+	ModelLlamaGuard412B:                {},
+	ModelLlamaPromptGuard222M:          {},
+	ModelLlamaPromptGuard286M:          {},
+	ModelKimiK2Instruct:                {},
+	ModelKimiK2Instruct0905:            {},
+	ModelOpenAIGptOss120B:              {},
+	ModelOpenAIGptOss20B:               {},
+	ModelOpenAIGptOssSafeguard20B:      {},
+	ModelQwen32B:                       {},
+}
+
+func (m Model) IsValid() bool {
+	_, ok := modelSet[m]
+	return ok
+}
+
+func All() []Model {
+	models := make([]Model, 0, len(modelSet))
+	for m := range modelSet {
+		models = append(models, m)
+	}
+	return models
+}
