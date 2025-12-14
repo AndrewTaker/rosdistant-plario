@@ -28,6 +28,7 @@ var (
 	totalCorrent, totalWrong int
 
 	logLevel string
+	help     string
 )
 
 func main() {
@@ -41,8 +42,14 @@ func main() {
 	flag.BoolVar(&infoMode, "infomode", false, "optional: print out availabe subjects, courses, modules and exit with 0")
 	flag.IntVar(&rMin, "rmin", 5, "optional: set minimum value for random delay between each question submission")
 	flag.IntVar(&rMax, "rmax", 10, "optional: set maximum value for random delay between each question submission")
-	flag.Var(&model, "model", "optional [default: openai/gpt-oss-120b]: choose from available groq models")
+	flag.Var(&model, "model", "optional: openai/gpt-oss-120b]: choose from available groq models")
+	flag.StringVar(&help, "help", "", "print out usage")
 	flag.Parse()
+
+	if help != "" {
+		flag.Usage()
+		return
+	}
 
 	if plarioToken == "" || groqToken == "" {
 		flag.Usage()
@@ -142,10 +149,8 @@ func main() {
 		}
 
 		rightAnswer := response.RightAnswerIDs[0]
-		withMeta.Info(fmt.Sprintf("groq -> %d, right -> %d", answer, rightAnswer))
-
 		if answer != rightAnswer {
-			withMeta.Warn(fmt.Sprintf("wrong answer, submited %d but right one is %d, will submit again and go further", answer, rightAnswer))
+			withMeta.Warn("wrong answer", "groq", response.RightAnswerIDs[0], "right", rightAnswer)
 			totalWrong++
 			_, err = plario.PostAnswer(client, question.Exercise.ActivityID, []int{rightAnswer}, true)
 			if err != nil {
@@ -153,7 +158,7 @@ func main() {
 				break
 			}
 		} else {
-			withMeta.Info("first try hit")
+			withMeta.Info("right answer", "groq", response.RightAnswerIDs[0], "right", rightAnswer)
 			totalCorrent++
 		}
 
