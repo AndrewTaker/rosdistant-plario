@@ -45,7 +45,7 @@ func main() {
 	flag.BoolVar(&infoMode, "infomode", false, "optional: print out availabe subjects, courses, modules and exit with 0")
 	flag.IntVar(&rMin, "rmin", 5, "optional: set minimum value for random delay between each question submission")
 	flag.IntVar(&rMax, "rmax", 10, "optional: set maximum value for random delay between each question submission")
-	flag.Var(&model, "model", "optional: openai/gpt-oss-120b]: choose from available groq models")
+	flag.Var(&model, "model", "optional: choose from available groq models")
 	flag.StringVar(&help, "help", "", "print out usage")
 	flag.Parse()
 
