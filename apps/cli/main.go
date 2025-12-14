@@ -17,7 +17,7 @@ import (
 var (
 	subjectID, courseID, moduleID int
 	plarioToken, groqToken        string
-	model                         llm.Model
+	model                         llm.Model = llm.ModelOpenAIGptOss120B
 	rMin, rMax                    int
 
 	infoMode, browserMode bool
@@ -34,14 +34,14 @@ func main() {
 	flag.StringVar(&plarioToken, "ptoken", "", "required: plario access token")
 	flag.StringVar(&groqToken, "gtoken", "", "required: groq api token")
 	flag.StringVar(&logLevel, "loglevel", "info", "optional: provide to change log level")
-	flag.IntVar(&subjectID, "subject", 0, "required if not info mode: subject_id")
-	flag.IntVar(&courseID, "course", 0, "required if not info mode: course_id")
-	flag.IntVar(&moduleID, "module", 0, "required if not info mode: module_id")
+	flag.IntVar(&subjectID, "subject", 0, "required if not infomode: subject_id")
+	flag.IntVar(&courseID, "course", 0, "required if not infomode: course_id")
+	flag.IntVar(&moduleID, "module", 0, "required if not infomode: module_id")
 	flag.Float64Var(&masteryCap, "till_mastery", 0.0, "optional: provide if you want to stop program execution at certain mastery level float 2.f")
 	flag.BoolVar(&infoMode, "infomode", false, "optional: print out availabe subjects, courses, modules and exit with 0")
 	flag.IntVar(&rMin, "rmin", 5, "optional: set minimum value for random delay between each question submission")
 	flag.IntVar(&rMax, "rmax", 10, "optional: set maximum value for random delay between each question submission")
-	flag.Var(&model, "model", "required: choose from available groq models")
+	flag.Var(&model, "model", "optional [default: openai/gpt-oss-120b]: choose from available groq models")
 	flag.Parse()
 
 	if plarioToken == "" || groqToken == "" {
